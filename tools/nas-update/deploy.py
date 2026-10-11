@@ -100,7 +100,7 @@ def database_inventory(data):
         rows = {name: {row[0] for row in connection.execute('SELECT id FROM "' + name + '"')}
                 for name in protected if name in names}
     keys = {path.name: digest(path) for path in data.iterdir()
-            if path.is_file() and ("key" in path.name.lower())}
+            if path.is_file() and ("key" in path.name.lower() or path.name == ".admin_token")}
     return rows, keys
 
 
@@ -114,6 +114,14 @@ def assert_preserved(before, after):
         raise RuntimeError("An existing encryption/signing key changed")
 
 
+def copy_owned(source, destination):
+    result = shutil.copy2(source, destination)
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        metadata = os.stat(source)
+        os.chown(destination, metadata.st_uid, metadata.st_gid)
+    return result
+
+
 def copy_data(source, destination):
     destination.mkdir(mode=0o700)
     for path in source.iterdir():
@@ -122,9 +130,9 @@ def copy_data(source, destination):
         if path.is_symlink():
             raise RuntimeError("Unexpected symlink in application data")
         if path.is_dir():
-            shutil.copytree(path, destination / path.name)
+            shutil.copytree(path, destination / path.name, copy_function=copy_owned)
         else:
-            shutil.copy2(path, destination / path.name)
+            copy_owned(path, destination / path.name)
 
 
 def compose_spec(base, backend, frontend, templates):
@@ -287,9 +295,10 @@ class Deployer:
                                 sidecar.unlink()
                         for path in (backup / "data").iterdir():
                             if path.is_file():
-                                shutil.copy2(path, self.base / "data" / path.name)
+                                copy_owned(path, self.base / "data" / path.name)
                             elif path.is_dir():
-                                shutil.copytree(path, self.base / "data" / path.name, dirs_exist_ok=True)
+                                shutil.copytree(path, self.base / "data" / path.name, dirs_exist_ok=True,
+                                                copy_function=copy_owned)
                     self.compose_run(old_file, "up", "-d", "--no-build")
                     self.healthy("plan-cards-backend-1")
                     self.healthy("plan-cards-frontend-1")
