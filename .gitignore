@@ -14,6 +14,12 @@ dist/
 .env
 .env.local
 
+# NAS data and automation runtime state must never enter a public fork.
+data/
+auto-update/
+*.bundle
+*.tar.gz
+
 # Database
 *.db
 # SQLite write-ahead log sidecars — *.db does not match these, so a test run

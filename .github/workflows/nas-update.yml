@@ -1,0 +1,184 @@
+name: Tested NAS Update
+
+on:
+  schedule:
+    - cron: '23 10 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tested-nas-update
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository != 'cocdeshijie/plan.cards'
+    runs-on: ubuntu-latest
+    outputs:
+      candidate: ${{ steps.merge.outputs.candidate }}
+      base: ${{ steps.merge.outputs.base }}
+      changed: ${{ steps.merge.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Merge upstream without discarding local changes
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BASE=$(git rev-parse HEAD)
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch https://github.com/cocdeshijie/plan.cards.git main
+          COMMON=$(git merge-base HEAD FETCH_HEAD)
+          if git diff --name-only "$COMMON" FETCH_HEAD -- .github tools/nas-update docker-compose.yaml docker-compose.nas.yml backend/Dockerfile frontend/Dockerfile | grep -q .; then
+            echo '::error::Upstream changed CI/deployment controls. Review these changes manually before retrying.'
+            exit 1
+          fi
+          git merge --no-edit --no-ff FETCH_HEAD
+          CANDIDATE=$(git rev-parse HEAD)
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "candidate=$CANDIDATE" >> "$GITHUB_OUTPUT"
+          if gh release view "nas-$CANDIDATE" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+          git branch nas-candidate "$CANDIDATE"
+          git bundle create candidate.bundle nas-candidate
+      - uses: actions/upload-artifact@v4
+        if: steps.merge.outputs.changed == 'true'
+        with:
+          name: candidate
+          path: candidate.bundle
+          retention-days: 7
+
+  test-build:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate
+      - name: Check out the exact merge candidate
+        env:
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+        run: |
+          git fetch ./candidate.bundle nas-candidate
+          test "$(git rev-parse FETCH_HEAD)" = "$CANDIDATE"
+          git checkout --detach "$CANDIDATE"
+          rm candidate.bundle
+      - uses: actions/setup-python@v5
+        if: matrix.component == 'backend'
+        with:
+          python-version: '3.12'
+      - name: Backend and deployment tests
+        if: matrix.component == 'backend'
+        run: |
+          pip install -r backend/requirements-dev.txt
+          python -m unittest discover -s tools/nas-update -p 'test_*.py' -v
+          cd backend
+          python -m pytest tests/ -q
+        env:
+          DATABASE_URL: sqlite:///test.db
+          CARD_TEMPLATES_DIR: ../card_templates
+          RATE_LIMIT_ENABLED: 'false'
+      - uses: oven-sh/setup-bun@v2
+        if: matrix.component == 'frontend'
+        with:
+          bun-version: '1'
+      - name: Frontend checks
+        if: matrix.component == 'frontend'
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          bun run typecheck
+          bun run lint
+          bun run build
+      - name: Build immutable runtime image
+        env:
+          COMPONENT: ${{ matrix.component }}
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+        run: |
+          docker build --label "org.opencontainers.image.revision=$CANDIDATE" \
+            --build-arg "COMMIT_HASH=$CANDIDATE" \
+            --tag "plan-cards-$COMPONENT:$CANDIDATE" --file "$COMPONENT/Dockerfile" .
+          docker save "plan-cards-$COMPONENT:$CANDIDATE" | gzip -1 > "$COMPONENT.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ matrix.component }}
+          path: ${{ matrix.component }}.tar.gz
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    needs: [prepare, test-build]
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-*
+          merge-multiple: true
+          path: release
+      - name: Publish only the tested commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ needs.prepare.outputs.base }}
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$BASE"
+          git fetch ./candidate.bundle nas-candidate
+          test "$(git rev-parse FETCH_HEAD)" = "$CANDIDATE"
+          git merge-base --is-ancestor "$BASE" "$CANDIDATE"
+          git archive "$CANDIDATE" card_templates | gzip > release/templates.tar.gz
+          export CANDIDATE
+          python - <<'PY'
+          import hashlib, json, os, pathlib
+          root = pathlib.Path('release')
+          names = ('backend.tar.gz', 'frontend.tar.gz', 'templates.tar.gz')
+          manifest = {
+              'schema': 1,
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'commit': os.environ['CANDIDATE'],
+              'files': {name: hashlib.file_digest((root / name).open('rb'), 'sha256').hexdigest() for name in names},
+          }
+          (root / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
+          git push origin "$CANDIDATE:refs/heads/main"
+          TAG="nas-$CANDIDATE"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$CANDIDATE" --draft \
+              --title "Tested NAS build ${CANDIDATE:0:12}" \
+              --notes 'Backend tests, deployment tests, frontend typecheck/lint/build and both Docker builds passed. NAS downloads and verifies these assets before backing up and deploying.'
+          fi
+          gh release upload "$TAG" release/* --clobber
+          gh release edit "$TAG" --draft=false --latest

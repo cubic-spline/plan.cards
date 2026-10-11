@@ -10,7 +10,8 @@ COPY backend/alembic ./alembic
 COPY backend/alembic.ini .
 COPY card_templates /card_templates
 
-RUN mkdir -p /data && \
+RUN chmod -R a+rX /app /card_templates && \
+    mkdir -p /data && \
     addgroup --system --gid 1001 appuser && \
     adduser --system --uid 1001 --gid 1001 appuser && \
     chown -R appuser:appuser /data

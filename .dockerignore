@@ -6,3 +6,10 @@ backend/.pytest_cache
 backend/venv
 **/*.pyc
 .env
+data
+auto-update
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.bundle
+**/*.tar.gz

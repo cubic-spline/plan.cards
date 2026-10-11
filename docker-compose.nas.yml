@@ -1,0 +1,9 @@
+services:
+  backend:
+    volumes:
+      - ./data:/data
+      - ./card_templates:/card_templates:ro
+
+  frontend:
+    ports:
+      - "0.0.0.0:${HOST_PORT:-32730}:3000"
