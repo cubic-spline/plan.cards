@@ -112,7 +112,12 @@ def database_inventory(data):
             if not primary:
                 raise RuntimeError("Protected table has no primary key: " + name)
             keys = ", ".join('"' + column[1].replace('"', '""') + '"' for column in primary)
-            rows[name] = set(connection.execute('SELECT ' + keys + ' FROM "' + name + '"'))
+            where = ""
+            if name == "card_bonus_categories" and {"from_template", "user_modified"} <= {c[1] for c in columns}:
+                # Upstream deliberately replaces unmodified template categories.
+                # Custom and user-edited rows must still survive every update.
+                where = " WHERE COALESCE(from_template, 0) != 1 OR COALESCE(user_modified, 0) = 1"
+            rows[name] = set(connection.execute('SELECT ' + keys + ' FROM "' + name + '"' + where))
     keys = {path.name: digest(path) for path in data.iterdir()
             if path.is_file() and ("key" in path.name.lower() or path.name == ".admin_token")}
     return rows, keys

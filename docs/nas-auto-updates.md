@@ -54,6 +54,8 @@ and image revision labels, then stops the application briefly. It backs up the
 database, encryption/signing keys, local configuration and previous image IDs
 before starting the new backend. It checks SQLite integrity, foreign keys,
 existing record IDs and key hashes before bringing the frontend back online.
+Unmodified template bonus categories may be replaced by upstream template sync;
+custom or user-edited categories remain protected, as do all benefit/event IDs.
 
 On failure it retains the failed data as well as the pre-update backup and
 restarts the old images. A failed release is not retried automatically. A failed

@@ -111,6 +111,23 @@ class BackupTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "no primary key"):
                 deploy.database_inventory(base / "data")
 
+    def test_template_category_refresh_keeps_custom_rows_protected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "source"
+            self.make_data(source)
+            with closing(sqlite3.connect(source / "cards.db")) as connection, connection:
+                connection.execute("CREATE TABLE card_bonus_categories (id INTEGER PRIMARY KEY, from_template INTEGER, user_modified INTEGER)")
+                connection.executemany("INSERT INTO card_bonus_categories VALUES (?, ?, ?)", [(1, 1, 0), (2, 0, 0), (3, 1, 1)])
+            before = deploy.database_inventory(source)
+            self.assertEqual(before[0]["card_bonus_categories"], {(2,), (3,)})
+            with closing(sqlite3.connect(source / "cards.db")) as connection, connection:
+                connection.execute("DELETE FROM card_bonus_categories WHERE id=1")
+            deploy.assert_preserved(before, deploy.database_inventory(source))
+            with closing(sqlite3.connect(source / "cards.db")) as connection, connection:
+                connection.execute("DELETE FROM card_bonus_categories WHERE id=3")
+            with self.assertRaises(RuntimeError):
+                deploy.assert_preserved(before, deploy.database_inventory(source))
+
 class DeploymentFailureTests(BackupTests):
     def setup_release(self, temp):
         base = Path(temp) / "plan-cards"
