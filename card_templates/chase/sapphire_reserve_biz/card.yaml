@@ -1,9 +1,16 @@
+# Reviewed 2026-10-02. Update sources (scope documented in October audit):
+# https://help.doordash.com/en-us/consumers/article/chase-partnership
+# https://creditcards.chase.com/business-credit-cards/sapphire/reserve?CELL=62XP
+# https://www.chase.com/personal/credit-cards/education/chase-cards/sapphire-reserve-vs-sapphire-reserve-for-business
+# Reviewed 2026-09-09. Sources:
+# https://www.chase.com/travel/guide/hotels/the-edit-chase-travel-credits-benefits
+# https://creditcards.chase.com/business-credit-cards/sapphire/reserve
 name: Chase Sapphire Reserve Business
 issuer: Chase
 network: Visa
 annual_fee: 795
 currency: USD
-version_id: chase_csr_biz_2025_1
+version_id: chase_csr_biz_2026_2
 
 benefits:
   credits:
@@ -11,11 +18,13 @@ benefits:
       amount: 300
       frequency: annual
       reset_type: cardiversary
-    - name: The Edit Hotel Credit
+    - key: the_edit_hotel_credit
+      name: The Edit Hotel Credit
       amount: 500
       frequency: annual
-      reset_type: cardiversary
-    - name: DoorDash Credit
+      reset_type: calendar
+    - key: doordash_credit
+      name: DoorDash Credit
       amount: 25
       frequency: monthly
       reset_type: calendar
@@ -39,11 +48,12 @@ benefits:
     - name: Shops at Chase Credit
       spend_required: 120000
       frequency: annual
-      reset_type: cardiversary
-      description: "$500 Shops at Chase credit after spending $120,000 in a cardmember year."
+      reset_type: calendar
+      description: "$500 Shops at Chase credit after spending $120,000 in a calendar year."
   bonus_categories:
     - category: Chase Travel
       multiplier: 8x
+      portal_only: true
     - category: Flights (Direct)
       multiplier: 4x
     - category: Hotels (Direct)
@@ -52,10 +62,19 @@ benefits:
       multiplier: 3x
 
 notes: |
+  DoorDash remains $25 monthly: $5 restaurant plus two $10 non-restaurant
+  promos with DashPass; the personal Reserve $35 increase does not apply.
+  Announced changes, not yet reflected in current trackers: advertising 3x
+  will be capped at $1 million per account anniversary year from November 15,
+  2026 (then 1x); The Edit rises to $1,000 per calendar year January 1, 2027,
+  still limited to $250 per qualifying transaction.
+  The Edit credit: up to $250 per qualifying prepaid stay of at least two
+  nights, up to $500 per calendar year; not a card-anniversary benefit.
   Chase Sapphire Lounge access.
   Priority Pass Select.
   Points transfer to Chase Ultimate Rewards partners.
-  1.5cpp redemption in Chase Travel.
+  Chase Travel redemptions are normally 1cpp; Points Boost offers up to 2cpp
+  on selected flights and hotels.
   Global Entry/TSA Pre credit.
   No foreign transaction fees.
 
