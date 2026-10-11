@@ -4,4 +4,4 @@ Description=Notify DSM administrators when a plan.cards update fails
 [Service]
 Type=oneshot
 User=root
-ExecStart=/usr/syno/bin/synodsmnotify -l error @administrators "plan.cards update failed" "Check plan-cards-update.service and /volume1/docker/plan-cards/auto-update/state.json. Automatic rollback is attempted after deployment errors; do not delete backups before inspection."
+ExecStart=/usr/syno/bin/synodsmnotify @administrators DSMSupportFormCustomFailure '{"%%CUSTOM_MSG%%":"plan.cards update failed. Check plan-cards-update.service and /volume1/docker/plan-cards/auto-update/state.json. Automatic rollback is attempted after deployment errors; keep backups until inspected"}'

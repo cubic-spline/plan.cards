@@ -23,9 +23,13 @@ REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def run(args, capture=True):
-    result = subprocess.run([str(arg) for arg in args], check=True,
-                            stdout=subprocess.PIPE if capture else None,
-                            stderr=subprocess.PIPE if capture else None, text=True)
+    try:
+        result = subprocess.run([str(arg) for arg in args], check=True,
+                                stdout=subprocess.PIPE if capture else None,
+                                stderr=subprocess.PIPE if capture else None, text=True)
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or "").strip()[-4000:]
+        raise RuntimeError("Command failed: " + str(args[0]) + ": " + detail) from error
     return result.stdout.strip() if capture else ""
 
 
@@ -96,9 +100,19 @@ def database_inventory(data):
         if connection.execute("PRAGMA foreign_key_check").fetchall():
             raise RuntimeError("Database foreign-key check failed")
         names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        protected = ("cards", "card_events", "card_benefits", "profiles", "users", "card_bonuses", "card_secrets")
-        rows = {name: {row[0] for row in connection.execute('SELECT id FROM "' + name + '"')}
-                for name in protected if name in names}
+        protected = ("cards", "card_events", "card_benefits", "profiles", "users", "card_bonuses",
+                     "card_secrets", "card_bonus_categories", "oauth_accounts", "oauth_providers",
+                     "settings", "system_config", "user_settings")
+        rows = {}
+        for name in protected:
+            if name not in names:
+                continue
+            columns = connection.execute('PRAGMA table_info("' + name + '")').fetchall()
+            primary = sorted((column for column in columns if column[5]), key=lambda column: column[5])
+            if not primary:
+                raise RuntimeError("Protected table has no primary key: " + name)
+            keys = ", ".join('"' + column[1].replace('"', '""') + '"' for column in primary)
+            rows[name] = set(connection.execute('SELECT ' + keys + ' FROM "' + name + '"'))
     keys = {path.name: digest(path) for path in data.iterdir()
             if path.is_file() and ("key" in path.name.lower() or path.name == ".admin_token")}
     return rows, keys
@@ -215,6 +229,9 @@ class Deployer:
             print("This release previously failed; explicit --retry is required.")
             return
 
+        # Reject an unsupported schema before downloading images or stopping services.
+        database_inventory(self.base / "data")
+
         staging = self.root / "releases" / commit
         staging.mkdir(parents=True, exist_ok=True)
         for name in FILES:
@@ -277,7 +294,7 @@ class Deployer:
                 if response.status != 200:
                     raise RuntimeError("Frontend HTTP probe failed")
             assert_preserved(before, database_inventory(self.base / "data"))
-            self.save_state(status="deployed", current=commit, failed=None)
+            self.save_state(status="deployed", current=commit, failed=None, last_error=None)
             print("Deployed " + commit + "; backup: " + str(backup))
         except Exception:
             self.save_state(status="failed", failed=commit)

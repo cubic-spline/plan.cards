@@ -88,6 +88,29 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(spec["services"]["frontend"]["ports"], ["0.0.0.0:32730:3000"])
         self.assertIn("/volume1/docker/plan-cards/data:/data", spec["services"]["backend"]["volumes"])
 
+    def test_inventory_supports_card_id_and_composite_primary_keys(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "source"
+            self.make_data(source)
+            with closing(sqlite3.connect(source / "cards.db")) as connection, connection:
+                connection.execute("CREATE TABLE card_secrets (card_id INTEGER PRIMARY KEY REFERENCES cards(id))")
+                connection.execute("INSERT INTO card_secrets VALUES (1)")
+                connection.execute("CREATE TABLE user_settings (user_id INTEGER, name TEXT, PRIMARY KEY(user_id, name))")
+                connection.execute("INSERT INTO user_settings VALUES (2, 'language')")
+            rows, _ = deploy.database_inventory(source)
+            self.assertEqual(rows["card_secrets"], {(1,)})
+            self.assertEqual(rows["user_settings"], {(2, "language")})
+
+    def test_inventory_rejects_table_without_primary_key(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp) / "plan-cards"
+            base.mkdir()
+            self.make_data(base / "data")
+            with closing(sqlite3.connect(base / "data/cards.db")) as connection, connection:
+                connection.execute("CREATE TABLE card_secrets (card_id INTEGER)")
+            with self.assertRaisesRegex(RuntimeError, "no primary key"):
+                deploy.database_inventory(base / "data")
+
 class DeploymentFailureTests(BackupTests):
     def setup_release(self, temp):
         base = Path(temp) / "plan-cards"
@@ -125,6 +148,17 @@ class DeploymentFailureTests(BackupTests):
         updater.compose_run = MagicMock()
         updater.healthy = MagicMock()
         return updater, release, manifest
+
+    def test_schema_preflight_failure_never_stops_containers(self):
+        with tempfile.TemporaryDirectory() as temp:
+            updater, release, manifest = self.setup_release(temp)
+            with patch.object(deploy, "fetch", side_effect=[release, manifest]), \
+                    patch.object(deploy, "database_inventory", side_effect=RuntimeError("unsupported schema")), \
+                    patch.object(deploy, "run") as commands:
+                with self.assertRaisesRegex(RuntimeError, "unsupported schema"):
+                    updater.execute()
+            commands.assert_not_called()
+            updater.compose_run.assert_not_called()
 
     def test_incomplete_backup_never_restores_partial_data(self):
         with tempfile.TemporaryDirectory() as temp:
