@@ -47,7 +47,8 @@ jobs:
           CANDIDATE=$(git rev-parse HEAD)
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
           echo "candidate=$CANDIDATE" >> "$GITHUB_OUTPUT"
-          if gh release view "nas-$CANDIDATE" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          PUBLISHED=$(gh release view "nas-$CANDIDATE" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null || true)
+          if [ "$PUBLISHED" = 'false' ]; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
