@@ -1,0 +1,10 @@
+[Unit]
+Description=Check for tested plan.cards releases hourly
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=1h
+Unit=plan-cards-update.service
+
+[Install]
+WantedBy=timers.target

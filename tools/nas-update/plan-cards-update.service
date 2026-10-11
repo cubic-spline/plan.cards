@@ -1,0 +1,16 @@
+[Unit]
+Description=Deploy tested plan.cards releases with backup and rollback
+After=network-online.target
+Wants=network-online.target
+OnFailure=plan-cards-update-failed.service
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2700
+ExecStart=/bin/python3 /volume1/docker/plan-cards/auto-update/deploy.py --config /volume1/docker/plan-cards/auto-update/config.json
+StandardOutput=journal
+StandardError=journal

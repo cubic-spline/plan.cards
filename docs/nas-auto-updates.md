@@ -23,6 +23,16 @@ job has write permission. No NAS credentials are stored in GitHub.
 Install a reviewed copy of `tools/nas-update/deploy.py` outside the release
 directory. It never replaces itself automatically.
 
+The included systemd timer checks for a new tested release hourly and five
+minutes after NAS boot. It does not need this desktop or the Codex app to be open.
+Install the three unit files under `/etc/systemd/system`, reload systemd, and enable
+the timer only after a successful supervised deployment. Confirm it remains
+installed after major DSM upgrades.
+
+The failure unit sends a DSM notification to the administrators group. Email or
+mobile delivery depends on the NAS notification settings; it is not configured
+by this installer. Build/merge failures appear in GitHub Actions.
+
 Configuration example (local only):
 
 ```json
